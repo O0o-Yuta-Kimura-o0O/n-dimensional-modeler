@@ -1,11 +1,14 @@
 import type { Vec } from '../core/linalg';
-import { add, matMul, planeRotation, scale as vscale, solve2, zeros } from '../core/linalg';
+import { add, identity, matMul, planeRotation, scale as vscale, solve2, zeros } from '../core/linalg';
 import type { Shape } from '../core/shape';
 import { cloneShape, mergeShapes, nextColor, padShape, rotateShape, scaleShape, shapeCenter, translateShape, usedDim } from '../core/shape';
 import type { PrimitiveKind } from '../core/primitives';
 import { PRIMITIVES, makePrimitive } from '../core/primitives';
 import type { BoolOp } from '../core/polytope';
-import { booleanShapes, sliceShape } from '../core/polytope';
+import { booleanShapes } from '../core/polytope';
+import type { PhysicsKind } from '../core/physics';
+import { PHYSICS, PHYSICS_DIM, makePhysics } from '../core/physics';
+import type { SliceJob } from '../core/sliceWorker';
 import type { DrawItem, Projected } from '../render/view';
 import { Projector, axisName, render } from '../render/view';
 import type { Key } from '../i18n';
@@ -19,10 +22,13 @@ const MAX_VERTS = 20000;
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 
-const GLYPH: Record<PrimitiveKind, string> = {
+const GLYPH: Record<PrimitiveKind | PhysicsKind, string> = {
   point: '•', simplex: '△', hypercube: '□', orthoplex: '◇', polygon: '⬡', prism: '⬢',
   pyramid: '▲', duoprism: '⊞', cell24: '✳', sphere: '○',
+  lightcone: '⧗', hopf: '◎', calabiyau: '❀', quasicrystal: '✦', e8: '✺', string10: '≋',
 };
+
+type SliceGeo = { verts: Vec[]; edges: [number, number][] };
 
 export class App {
   S: AppState = initialState();
@@ -37,7 +43,13 @@ export class App {
   undoStack: string[] = [];
   redoStack: string[] = [];
   dirty = true;
-  sliceCache = new Map<string, { verts: Vec[]; edges: [number, number][] }>();
+  sliceCache = new Map<string, SliceGeo>();
+  /** last finished slice per shape – shown while a new one is being computed */
+  lastSlice = new Map<string, SliceGeo>();
+  sliceQueue: SliceJob[] = [];
+  slicePending = new Set<string>();
+  sliceBusy: string | null = null;
+  sliceWorker: Worker | null = null;
   saveTimer = 0;
 
   constructor() {
@@ -141,7 +153,7 @@ export class App {
   /** geometry changed */
   touch(): void {
     this.S.rev++;
-    this.sliceCache.clear();
+    this.resetSlices();
     this.dirty = true;
     this.scheduleSave();
   }
@@ -166,6 +178,14 @@ export class App {
       b.innerHTML = `<span class="glyph">${GLYPH[k]}</span><span class="nm"></span>`;
       b.onclick = () => this.addPrimitive(k);
       list.appendChild(b);
+    }
+    const phys = $('physList');
+    for (const k of PHYSICS) {
+      const b = document.createElement('button');
+      b.dataset.phys = k;
+      b.innerHTML = `<span class="glyph">${GLYPH[k]}</span><span class="nm"></span><span class="dimtag">${PHYSICS_DIM[k]}D</span>`;
+      b.onclick = () => this.addPhysics(k);
+      phys.appendChild(b);
     }
     const inP = $<HTMLInputElement>('inP');
     const inQ = $<HTMLInputElement>('inQ');
@@ -204,7 +224,7 @@ export class App {
     const so = $<HTMLInputElement>('sliceOff');
     so.oninput = () => {
       if (this.S.dim < this.S.N) this.S.sliceOffset[this.S.dim] = Number(so.value);
-      this.sliceCache.clear();
+      this.resetSlices();
       this.dirty = true;
     };
     const bindChk = (id: string, get: () => boolean, set: (v: boolean) => void) => {
@@ -283,6 +303,10 @@ export class App {
     document.title = `${t('appTitle')} v${VERSION}`;
     $('primList').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       b.querySelector('.nm')!.textContent = t(`prim_${b.dataset.prim}` as Key);
+    });
+    $('physList').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      b.querySelector('.nm')!.textContent = t(`prim_${b.dataset.phys}` as Key);
+      b.title = t(`desc_${b.dataset.phys}` as Key);
     });
     this.refreshDim();
     this.refreshShapes();
@@ -407,12 +431,12 @@ export class App {
     }
   }
 
-  toast(msg: string): void {
+  toast(msg: string, ms = 2400): void {
     const el = $('toast');
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout((el as unknown as { _t: number })._t);
-    (el as unknown as { _t: number })._t = window.setTimeout(() => el.classList.remove('show'), 2400);
+    (el as unknown as { _t: number })._t = window.setTimeout(() => el.classList.remove('show'), ms);
   }
 
   // ───────────────────────────── dimension
@@ -421,7 +445,7 @@ export class App {
     S.dim = Math.max(0, Math.min(S.maxDim, d));
     ensureStorage(S, S.maxDim);
     fitRotationToDim(S);
-    this.sliceCache.clear();
+    this.resetSlices();
     this.refreshDim();
     this.dirty = true;
   }
@@ -465,6 +489,41 @@ export class App {
     this.touch();
     this.refreshShapes();
     this.refreshDim();
+    if (window.innerWidth <= 760) this.togglePanel('panelAdd', false);
+  }
+
+  /** Physics sample: switches to its native dimension and a fitting view. */
+  addPhysics(k: PhysicsKind): void {
+    const S = this.S;
+    const dim = PHYSICS_DIM[k];
+    if (dim > S.maxDim) S.maxDim = dim;
+    ensureStorage(S, Math.max(S.maxDim, dim));
+    this.snapshot();
+    const s = makePhysics(k, nextColor(), S.N);
+    padShape(s, S.N);
+    S.shapes.push(s);
+    if (S.multi) S.selected.push(s.id);
+    else S.selected = [s.id];
+    S.dim = dim;
+    if (k === 'e8') {
+      // the Petrie projection lives in the x–y plane: look straight at it
+      S.view.R = identity(S.N);
+      S.view.perspective = false;
+    } else {
+      S.view.R = defaultRotation(S.N);
+      S.view.perspective = k !== 'quasicrystal';
+      // light cone: put time (w) on the screen's vertical axis, like the textbook picture
+      if (k === 'lightcone') S.view.R = matMul(S.view.R, planeRotation(S.N, 1, 3, Math.PI / 2));
+    }
+    S.view.zoom = k === 'string10' ? 0.5 : 1;
+    S.view.panX = 0;
+    S.view.panY = 0;
+    fitRotationToDim(S);
+    this.touch();
+    this.refreshDim();
+    this.refreshView();
+    this.refreshShapes();
+    this.toast(t(`desc_${k}` as Key), 9000);
     if (window.innerWidth <= 760) this.togglePanel('panelAdd', false);
   }
 
@@ -600,17 +659,60 @@ export class App {
     this.dirty = true;
   }
 
+  /** Forget all cross-sections (geometry, dimension or slice position changed). */
+  resetSlices(): void {
+    this.sliceCache.clear();
+    this.sliceQueue = [];
+    this.slicePending.clear();
+    if (this.sliceBusy && this.sliceWorker) {
+      // a stale heavy job is running: throw the worker away instead of waiting
+      this.sliceWorker.terminate();
+      this.sliceWorker = null;
+    }
+    this.sliceBusy = null;
+  }
+
+  ensureSliceWorker(): Worker {
+    if (!this.sliceWorker) {
+      this.sliceWorker = new Worker(new URL('../core/sliceWorker.ts', import.meta.url), { type: 'module' });
+      this.sliceWorker.onmessage = (e: MessageEvent<SliceGeo & { key: string }>) => {
+        const { key, verts, edges } = e.data;
+        if (key === this.sliceBusy) {
+          this.sliceCache.set(key, { verts, edges });
+          this.lastSlice.set(key.split('|')[0], { verts, edges });
+          this.slicePending.delete(key);
+          this.sliceBusy = null;
+          this.dirty = true;
+          this.pumpSlices();
+        }
+      };
+    }
+    return this.sliceWorker;
+  }
+
+  pumpSlices(): void {
+    if (this.sliceBusy) return;
+    const job = this.sliceQueue.shift();
+    $('hud').classList.toggle('busy', !!job);
+    if (!job) return;
+    this.sliceBusy = job.key;
+    this.ensureSliceWorker().postMessage(job);
+  }
+
   geometryFor(s: Shape): { verts: Vec[]; edges: [number, number][]; editable: boolean } {
     const S = this.S;
     if (S.mode === 'slice' && S.dim < usedDim(s)) {
       if (!s.cells) return { verts: [], edges: [], editable: false };
-      const key = `${s.id}|${S.rev}|${S.dim}|${S.sliceOffset.join(',')}`;
-      let g = this.sliceCache.get(key);
-      if (!g) {
-        g = sliceShape(s, S.dim, Math.max(usedDim(s), S.dim), S.sliceOffset);
-        this.sliceCache.set(key, g);
+      const D = Math.max(usedDim(s), S.dim);
+      const key = `${s.id}|${S.rev}|${S.dim}|${S.sliceOffset.slice(0, D).join(',')}`;
+      const g = this.sliceCache.get(key);
+      if (g) return { ...g, editable: false };
+      if (!this.slicePending.has(key)) {
+        this.slicePending.add(key);
+        this.sliceQueue.push({ key, shape: JSON.parse(JSON.stringify(s)), d: S.dim, D, offsets: S.sliceOffset.slice() });
+        this.pumpSlices();
       }
-      return { ...g, editable: false };
+      return { ...(this.lastSlice.get(s.id) ?? { verts: [], edges: [] }), editable: false };
     }
     return { verts: s.verts, edges: s.edges, editable: true };
   }

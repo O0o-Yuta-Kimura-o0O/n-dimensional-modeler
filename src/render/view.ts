@@ -120,6 +120,8 @@ export function render(ctx: CanvasRenderingContext2D, P: Projector, items: DrawI
   items.forEach((it, ii) => {
     const pts = screen[ii];
     const base = hexToRgb(it.color);
+    // dense wire-frames (E8: 6720 edges) need thin, lighter lines to stay readable
+    const dens = it.edges.length > 3000 ? 0.4 : it.edges.length > 1000 ? 0.7 : 1;
     for (const [a, b] of it.edges) {
       const pa = pts[a];
       const pb = pts[b];
@@ -133,15 +135,15 @@ export function render(ctx: CanvasRenderingContext2D, P: Projector, items: DrawI
         const k = Math.min(1, Math.abs(h)) * 0.75;
         rgb = [0, 1, 2].map((i) => Math.round(base[i] * (1 - k) + tgt[i] * k)) as [number, number, number];
       }
-      const alpha = (it.dimmed ? 0.3 : 1) * fog;
-      segs.push({ a: pa, b: pb, z, col: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})`, w: it.selected ? 2.6 : 1.5 });
+      const alpha = (it.dimmed ? 0.3 : 1) * fog * (dens < 1 ? 0.55 + 0.45 * dens : 1);
+      segs.push({ a: pa, b: pb, z, col: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})`, w: (it.selected ? 2.6 : 1.5) * dens });
     }
   });
   segs.sort((s1, s2) => s1.z - s2.z);
   ctx.lineCap = 'round';
   // glow for selected shapes
   items.forEach((it, ii) => {
-    if (!it.selected) return;
+    if (!it.selected || it.edges.length > 1000) return;
     const pts = screen[ii];
     ctx.strokeStyle = 'rgba(255,255,255,0.12)';
     ctx.lineWidth = 7;

@@ -86,51 +86,70 @@ export function shapeCells(shape: Shape, D: number): WCell[] {
   return out;
 }
 
-/** Combinatorial edge detection. */
-export function cellEdges(c: WCell): [number, number][] {
-  if (c._edges) return c._edges;
-  const V = c.verts.length;
+/**
+ * Combinatorial edge detection: u–v is an edge iff no other vertex lies on every plane that
+ * contains both. Uses an inverted index (plane → vertices) so only vertex pairs that share
+ * at least k−1 planes are examined; this keeps polytopes with many facets (E8: 19440) fast.
+ *
+ * With `subset`, only pairs inside the subset are tested and only subset vertices are
+ * considered as blockers – valid when every subset vertex lies on a common plane.
+ */
+function edgesAmong(c: WCell, subset: number[] | null): [number, number][] {
+  const idx = subset ?? c.verts.map((_, i) => i);
+  const V = idx.length;
   const edges: [number, number][] = [];
-  if (V === 2) {
-    edges.push([0, 1]);
-  } else if (V > 2) {
-    const m = c.planes.length;
-    const W = Math.max(1, Math.ceil(m / 32));
-    const bits = c.verts.map((v) => {
-      const b = new Uint32Array(W);
-      v.F.forEach((p) => (b[p >>> 5] |= 1 << (p & 31)));
-      return b;
-    });
-    const common = new Uint32Array(W);
-    const need = Math.max(0, c.k - 1);
-    for (let u = 0; u < V; u++) {
-      for (let v = u + 1; v < V; v++) {
-        let cnt = 0;
-        for (let w = 0; w < W; w++) {
-          const x = bits[u][w] & bits[v][w];
-          common[w] = x;
-          cnt += popcount(x);
-        }
-        if (cnt < need) continue;
-        let isEdge = true;
-        for (let o = 0; o < V && isEdge; o++) {
-          if (o === u || o === v) continue;
-          let sub = true;
-          for (let w = 0; w < W; w++) if ((common[w] & ~bits[o][w]) !== 0) { sub = false; break; }
-          if (sub) isEdge = false;
-        }
-        if (isEdge) edges.push([u, v]);
-      }
+  if (V < 2) return edges;
+  if (V === 2 && !subset) return [[0, 1]];
+  const need = Math.max(0, c.k - 1);
+  const planeVerts = new Map<number, number[]>();
+  for (const i of idx) c.verts[i].F.forEach((p) => {
+    let l = planeVerts.get(p);
+    if (!l) planeVerts.set(p, (l = []));
+    l.push(i);
+  });
+  const isEdge = (u: number, v: number, common: number[]): boolean => {
+    if (common.length === 0) return V === 2;
+    let best = planeVerts.get(common[0])!;
+    for (const p of common) { const l = planeVerts.get(p)!; if (l.length < best.length) best = l; }
+    for (const w of best) {
+      if (w === u || w === v) continue;
+      const F = c.verts[w].F;
+      let all = true;
+      for (const p of common) if (!F.has(p)) { all = false; break; }
+      if (all) return false;
     }
+    return true;
+  };
+  const counts = new Map<number, number>();
+  for (let a = 0; a < V; a++) {
+    const u = idx[a];
+    const Fu = c.verts[u].F;
+    if (need === 0) {
+      for (let b = a + 1; b < V; b++) {
+        const v = idx[b];
+        const common = [...Fu].filter((p) => c.verts[v].F.has(p));
+        if (isEdge(u, v, common)) edges.push([u, v]);
+      }
+      continue;
+    }
+    counts.clear();
+    Fu.forEach((p) => {
+      for (const v of planeVerts.get(p)!) if (v > u) counts.set(v, (counts.get(v) ?? 0) + 1);
+    });
+    counts.forEach((cnt, v) => {
+      if (cnt < need) return;
+      const Fv = c.verts[v].F;
+      const common: number[] = [];
+      Fu.forEach((p) => { if (Fv.has(p)) common.push(p); });
+      if (isEdge(u, v, common)) edges.push([u, v]);
+    });
   }
-  c._edges = edges;
   return edges;
 }
 
-function popcount(x: number): number {
-  x = x - ((x >>> 1) & 0x55555555);
-  x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
-  return (((x + (x >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+export function cellEdges(c: WCell): [number, number][] {
+  if (!c._edges) c._edges = edgesAmong(c, null);
+  return c._edges;
 }
 
 function recomputeHull(c: WCell): void {
@@ -140,8 +159,19 @@ function recomputeHull(c: WCell): void {
   c.eqs = complement(basis, c.D).map((e) => ({ n: e, d: dot(e, origin) }));
 }
 
-/** Clip a cell by the half-space n·x <= d. Returns null when empty. */
-export function clip(c: WCell, h: Plane): WCell | null {
+/** Drop planes that touch fewer than k vertices – they cannot be facets any more. */
+function prunePlanes(c: WCell): void {
+  if (c.k < 1) return;
+  const cnt = new Map<number, number>();
+  for (const v of c.verts) v.F.forEach((p) => cnt.set(p, (cnt.get(p) ?? 0) + 1));
+  const dead = new Set<number>();
+  cnt.forEach((n, p) => { if (n < c.k) dead.add(p); });
+  if (dead.size === 0) return;
+  for (const v of c.verts) dead.forEach((p) => v.F.delete(p));
+}
+
+/** Clip a cell by the half-space n·x <= d. Returns null when empty. Edges are updated incrementally. */
+export function clip(c: WCell, h: Plane, ownPlanes = false): WCell | null {
   const tol = tolFor(c.verts.map((v) => v.p));
   const s = c.verts.map((v) => dot(h.n, v.p) - h.d);
   let anyIn = false;
@@ -153,32 +183,52 @@ export function clip(c: WCell, h: Plane): WCell | null {
   if (!anyOut) return c; // fully inside (or touching)
   const hasOn = s.some((x) => Math.abs(x) <= tol);
   if (!anyIn && !hasOn) return null;
+  const oldEdges = cellEdges(c);
   const pi = c.planes.length;
-  const planes = c.planes.concat([h]);
+  // ownPlanes: the caller owns `c` exclusively, so the plane list can grow in place
+  const planes = ownPlanes ? c.planes : c.planes.concat([h]);
+  if (ownPlanes) planes.push(h);
   const verts: WVert[] = [];
+  const keep = new Array<number>(c.verts.length).fill(-1);
+  const face: number[] = [];
   c.verts.forEach((v, i) => {
     if (s[i] <= tol) {
       const F = new Set(v.F);
-      if (Math.abs(s[i]) <= tol) F.add(pi);
+      keep[i] = verts.length;
+      if (Math.abs(s[i]) <= tol) { F.add(pi); face.push(verts.length); }
       verts.push({ p: v.p, F });
     }
   });
-  if (anyIn) {
-    for (const [a, b] of cellEdges(c)) {
-      const sa = s[a];
-      const sb = s[b];
-      if ((sa < -tol && sb > tol) || (sa > tol && sb < -tol)) {
-        const t = sa / (sa - sb);
-        const F = new Set<number>();
-        c.verts[a].F.forEach((p) => { if (c.verts[b].F.has(p)) F.add(p); });
-        F.add(pi);
-        verts.push({ p: lerp(c.verts[a].p, c.verts[b].p, t), F });
-      }
+  const edges: [number, number][] = [];
+  for (const [a, b] of oldEdges) {
+    const sa = s[a];
+    const sb = s[b];
+    if (keep[a] >= 0 && keep[b] >= 0) {
+      edges.push([keep[a], keep[b]]);
+    } else if (anyIn && ((sa < -tol && sb > tol) || (sa > tol && sb < -tol))) {
+      const t = sa / (sa - sb);
+      const F = new Set<number>();
+      c.verts[a].F.forEach((p) => { if (c.verts[b].F.has(p)) F.add(p); });
+      F.add(pi);
+      const ni = verts.length;
+      verts.push({ p: lerp(c.verts[a].p, c.verts[b].p, t), F });
+      face.push(ni);
+      edges.push([sa < 0 ? keep[a] : keep[b], ni]);
     }
   }
   if (verts.length === 0) return null;
   const out: WCell = { D: c.D, verts, planes, eqs: [], k: 0 };
   recomputeHull(out);
+  if (anyIn && face.length >= 2) {
+    // new edges can only appear inside the cut face (all its vertices lie on plane pi)
+    const seen = new Set(edges.map(([a, b]) => (a < b ? `${a}_${b}` : `${b}_${a}`)));
+    for (const [a, b] of edgesAmong(out, face)) {
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+      if (!seen.has(key)) { seen.add(key); edges.push([a, b]); }
+    }
+  }
+  out._edges = edges;
+  prunePlanes(out);
   return out;
 }
 
@@ -431,18 +481,95 @@ export function booleanShapes(op: BoolOp, a: Shape, b: Shape, D: number, color: 
 export function sliceShape(shape: Shape, d: number, D: number, offsets: number[]): { verts: Vec[]; edges: [number, number][] } {
   const cells = shapeCells(shape, D);
   const out: WCell[] = [];
-  for (let c of cells) {
-    let r: WCell | null = c;
-    for (let j = d; j < D && r; j++) {
-      const n = new Array(D).fill(0);
-      n[j] = 1;
-      const o = offsets[j] ?? 0;
-      r = clip(r, { n, d: o });
-      if (r) r = clip(r, { n: scale(n, -1), d: -o });
-    }
+  // Two strategies with very different cost profiles (measured on E8, 19440 facets):
+  //  - box clipping in R^d: fast for d <= 3, explodes for larger d
+  //  - clipping the full cell by the hidden-axis hyperplanes: steady, better for d >= 4
+  const useBox = d <= 3;
+  for (const c of cells) {
+    const r = useBox ? sliceCell(c, d, offsets) : sliceCellChain(c, d, offsets);
     if (r) out.push(r);
   }
   if (out.length === 0) return { verts: [], edges: [] };
   const s = cellsToShape(out, {});
-  return { verts: s.verts, edges: s.edges };
+  if (!useBox) return { verts: s.verts, edges: s.edges };
+  const hidden = new Array(Math.max(0, D - d)).fill(0).map((_, i) => offsets[d + i] ?? 0);
+  return { verts: s.verts.map((v) => v.concat(hidden)), edges: s.edges };
+}
+
+/** Cross-section by clipping the cell itself with x_j = offset_j for every hidden axis j. */
+function sliceCellChain(c: WCell, d: number, offsets: number[]): WCell | null {
+  let r: WCell | null = c;
+  for (let j = c.D - 1; j >= d && r; j--) {
+    const n = new Array(c.D).fill(0);
+    n[j] = 1;
+    const o = offsets[j] ?? 0;
+    r = clip(r, { n, d: o });
+    if (r) r = clip(r, { n: scale(n, -1), d: -o });
+  }
+  return r;
+}
+
+/** Axis-aligned box as a working cell in R^d (vertices carry their box facets). */
+function boxCell(lo: Vec, hi: Vec): WCell {
+  const d = lo.length;
+  const planes: Plane[] = [];
+  for (let i = 0; i < d; i++) {
+    const n = new Array(d).fill(0);
+    n[i] = -1;
+    planes.push({ n, d: -lo[i] });
+    const m = new Array(d).fill(0);
+    m[i] = 1;
+    planes.push({ n: m, d: hi[i] });
+  }
+  const verts: WVert[] = [];
+  const edges: [number, number][] = [];
+  for (let mask = 0; mask < 1 << d; mask++) {
+    const p: Vec = [];
+    const F = new Set<number>();
+    for (let i = 0; i < d; i++) {
+      const up = (mask >> i) & 1;
+      p.push(up ? hi[i] : lo[i]);
+      F.add(2 * i + up);
+      const o = mask ^ (1 << i);
+      if (o > mask) edges.push([mask, o]);
+    }
+    verts.push({ p, F });
+  }
+  return { D: d, verts, planes, eqs: [], k: d, _edges: edges };
+}
+
+/**
+ * Cross-section of a cell with { x_j = offsets_j, j >= d }, computed directly in R^d:
+ * a bounding box is clipped by every facet plane restricted to the visible coordinates.
+ * This stays cheap even for polytopes with tens of thousands of facets in high dimension.
+ */
+export function sliceCell(c: WCell, d: number, offsets: number[]): WCell | null {
+  const D = c.D;
+  const tol = tolFor(c.verts.map((v) => v.p));
+  const restrict = (h: Plane): Plane | 'skip' | 'empty' => {
+    const n = h.n.slice(0, d);
+    let rhs = h.d;
+    for (let j = d; j < D; j++) rhs -= h.n[j] * (offsets[j] ?? 0);
+    if (norm(n) < 1e-12) return rhs < -tol ? 'empty' : 'skip';
+    return { n, d: rhs };
+  };
+  if (d === 0) {
+    const p = new Array(D).fill(0).map((_, j) => offsets[j] ?? 0);
+    return insideCell(c, p, tol) ? { D: 0, verts: [{ p: [], F: new Set() }], planes: [], eqs: [], k: 0, _edges: [] } : null;
+  }
+  const lo = new Array(d).fill(Infinity);
+  const hi = new Array(d).fill(-Infinity);
+  for (const v of c.verts) for (let i = 0; i < d; i++) { lo[i] = Math.min(lo[i], v.p[i]); hi[i] = Math.max(hi[i], v.p[i]); }
+  const margin = 0.05 * Math.max(1, ...hi.map((x, i) => x - lo[i]));
+  let r: WCell | null = boxCell(lo.map((x) => x - margin), hi.map((x) => x + margin));
+  // equalities first: they collapse flat cells early
+  const cons: Plane[] = c.eqs.flatMap((e) => [e, flip(e)]).concat(c.planes);
+  for (const h of cons) {
+    const rh = restrict(h);
+    if (rh === 'skip') continue;
+    if (rh === 'empty') return null;
+    r = clip(r, rh, true);
+    if (!r) return null;
+  }
+  return r;
 }
