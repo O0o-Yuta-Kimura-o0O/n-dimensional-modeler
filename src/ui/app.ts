@@ -812,13 +812,13 @@ export class App {
         const d = S.dim;
         if (d >= 3) {
           if (S.rotAxis >= 3) {
-            this.rotateView(0, S.rotAxis, dx * 0.01);
-            this.rotateView(1, S.rotAxis, -dy * 0.01);
+            this.rotateView(0, S.rotAxis, -dx * 0.01);
+            this.rotateView(1, S.rotAxis, dy * 0.01);
           } else {
-            this.rotateView(0, 2, dx * 0.01);
-            this.rotateView(1, 2, -dy * 0.01);
+            this.rotateView(0, 2, -dx * 0.01);
+            this.rotateView(1, 2, dy * 0.01);
           }
-        } else if (d === 2) this.rotateView(0, 1, dx * 0.01);
+        } else if (d === 2) this.rotateView(0, 1, -dx * 0.01);
       } else if (drag.kind === 'pan') {
         S.view.panX += dx;
         S.view.panY += dy;
