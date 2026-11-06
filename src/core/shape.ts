@@ -1,4 +1,5 @@
 import type { Vec } from './linalg';
+import type { Track } from './anim';
 import { add, centroid, matVec, pad, planeRotation, sub, scale as vscale } from './linalg';
 
 /**
@@ -24,6 +25,8 @@ export interface Shape {
   edges: [number, number][];
   /** convex decomposition; null = wireframe-only (e.g. hypersphere). */
   cells: Cell[] | null;
+  /** animation tracks bound to time dimensions */
+  anim?: Track[];
 }
 
 let idCounter = 0;
@@ -34,7 +37,10 @@ export function newId(): string {
 
 export const PALETTE = ['#4cc9f0', '#f72585', '#b8f35a', '#ffb703', '#9d4edd', '#06d6a0', '#ff7b54', '#e9ecef'];
 let colorIdx = 0;
-export const nextColor = (): string => PALETTE[colorIdx++ % PALETTE.length];
+let activePalette = PALETTE;
+/** Themes provide their own palette for newly created shapes. */
+export const setPalette = (p: string[]): void => { activePalette = p.length ? p : PALETTE; };
+export const nextColor = (): string => activePalette[colorIdx++ % activePalette.length];
 
 export function cloneShape(s: Shape): Shape {
   return {
@@ -43,6 +49,7 @@ export function cloneShape(s: Shape): Shape {
     verts: s.verts.map((v) => v.slice()),
     edges: s.edges.map((e) => [e[0], e[1]] as [number, number]),
     cells: s.cells ? s.cells.map((c) => ({ verts: c.verts.slice(), facets: c.facets.map((f) => f.slice()) })) : null,
+    anim: s.anim ? JSON.parse(JSON.stringify(s.anim)) : undefined,
   };
 }
 

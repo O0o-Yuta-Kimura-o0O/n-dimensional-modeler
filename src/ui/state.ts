@@ -28,6 +28,14 @@ export interface AppState {
   view: ViewState;
   /** bumps on every geometry change (cache key) */
   rev: number;
+  /** number of time dimensions (0–6) */
+  timeDims: number;
+  /** clock value of each time axis t₁…t₆ */
+  times: number[];
+  /** speed of each time axis */
+  timeRates: number[];
+  playing: boolean;
+  theme: string;
 }
 
 export function initialState(): AppState {
@@ -58,6 +66,11 @@ export function initialState(): AppState {
       showAxes: true,
     },
     rev: 0,
+    timeDims: 0,
+    times: [0, 0, 0, 0, 0, 0],
+    timeRates: [1, 1, 1, 1, 1, 1],
+    playing: true,
+    theme: 'dark',
   };
 }
 

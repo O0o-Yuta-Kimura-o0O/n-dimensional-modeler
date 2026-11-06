@@ -6,6 +6,7 @@ import type { Vec } from './linalg';
 import { complement, dot, matVec, orthonormalize, pad, zeros } from './linalg';
 import { hypercube, polygon, product } from './primitives';
 import type { Shape } from './shape';
+import type { Track } from './anim';
 import { newId } from './shape';
 
 export type PhysicsKind = 'lightcone' | 'hopf' | 'calabiyau' | 'quasicrystal' | 'e8' | 'string10';
@@ -261,6 +262,61 @@ function string10(): Geo {
 
 const BUILDERS: Record<PhysicsKind, () => Geo> = { lightcone: lightCone, hopf, calabiyau: () => calabiYau(5), quasicrystal, e8, string10 };
 
+/**
+ * Animation data. Each track is bound to a time axis (t: 0 = t₁ … 5 = t₆); a motion only
+ * plays when that many time dimensions exist.
+ */
+export const PHYSICS_ANIM: Record<PhysicsKind, Track[]> = {
+  // t₁: a spherical light wave converges on the event and expands again (watch it in
+  //     cross-section at 3D: the sphere shrinks to a point, then grows);
+  // t₂: Lorentz boost along x – the light cone is invariant, only its points slide along it.
+  lightcone: [
+    { t: 0, type: 'translate', vec: [0, 0, 0, -1], period: 2.6 },
+    { t: 1, type: 'boost', plane: [0, 3], amp: 0.9, omega: 0.9 },
+  ],
+  // t₁: rotate the Bloch sphere (fibres move to other fibres, the linking pattern is kept);
+  // t₂, t₃: further rotations of S³.
+  hopf: [
+    { t: 0, type: 'rotate', plane: [0, 1], omega: 0.6 },
+    { t: 0, type: 'rotate', plane: [2, 3], omega: -0.6 },
+    { t: 1, type: 'rotate', plane: [0, 2], omega: 0.45 },
+    { t: 2, type: 'rotate', plane: [1, 3], omega: 0.3 },
+  ],
+  // t₁: turn the projection angle between Im z₁ and Im z₂ (the classic Calabi–Yau animation);
+  // t₂, t₃: rotations mixing the real parts.
+  calabiyau: [
+    { t: 0, type: 'rotate', plane: [2, 3], omega: 0.5 },
+    { t: 1, type: 'rotate', plane: [0, 1], omega: 0.35 },
+    { t: 2, type: 'rotate', plane: [1, 2], omega: 0.25 },
+  ],
+  // t₁: phason – slide through perpendicular space (changes the cross-section at 3D);
+  // t₂: rotate inside perpendicular space; t₃: tilt physical vs perpendicular space.
+  quasicrystal: [
+    { t: 0, type: 'oscillate', vec: [0, 0, 0, 0.55, 0.34, 0.21], omega: 0.5 },
+    { t: 1, type: 'rotate', plane: [3, 4], omega: 0.4 },
+    { t: 2, type: 'rotate', plane: [0, 3], omega: 0.2 },
+  ],
+  // six independent rotations, one per time axis (t₁ spins the Petrie plane)
+  e8: [
+    { t: 0, type: 'rotate', plane: [0, 1], omega: (2 * Math.PI) / 30 },
+    { t: 1, type: 'rotate', plane: [2, 3], omega: 0.31 },
+    { t: 2, type: 'rotate', plane: [4, 5], omega: 0.23 },
+    { t: 3, type: 'rotate', plane: [6, 7], omega: 0.17 },
+    { t: 4, type: 'rotate', plane: [0, 2], omega: 0.11 },
+    { t: 5, type: 'rotate', plane: [1, 7], omega: 0.07 },
+  ],
+  // t₁–t₃: the three circles of the compact T⁶ spin ("string vibrations");
+  // t₄: rotate 4-D space-time; t₅: the whole space breathes; t₆: spatial rotation.
+  string10: [
+    { t: 0, type: 'rotate', plane: [4, 5], omega: 1.6 },
+    { t: 1, type: 'rotate', plane: [6, 7], omega: -1.2 },
+    { t: 2, type: 'rotate', plane: [8, 9], omega: 0.9 },
+    { t: 3, type: 'rotate', plane: [0, 3], omega: 0.35 },
+    { t: 4, type: 'scale', amp: 0.18, omega: 0.8 },
+    { t: 5, type: 'rotate', plane: [1, 2], omega: 0.25 },
+  ],
+};
+
 export function makePhysics(kind: PhysicsKind, color: string, D: number): Shape {
   const g = BUILDERS[kind]();
   const N = Math.max(D, PHYSICS_DIM[kind]);
@@ -273,5 +329,6 @@ export function makePhysics(kind: PhysicsKind, color: string, D: number): Shape 
     verts: g.verts.map((v) => pad(v.slice(), N)),
     edges: g.edges,
     cells: g.cells,
+    anim: JSON.parse(JSON.stringify(PHYSICS_ANIM[kind])),
   };
 }

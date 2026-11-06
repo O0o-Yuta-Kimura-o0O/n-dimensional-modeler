@@ -1,7 +1,11 @@
 import type { Vec } from '../core/linalg';
-import { add, identity, matMul, planeRotation, scale as vscale, solve2, zeros } from '../core/linalg';
+import { add, centroid, identity, invert, matMul, matVec, planeRotation, scale as vscale, solve2, zeros } from '../core/linalg';
+import type { Pose } from '../core/anim';
+import { MAX_TIME_DIMS, applyPose, poseOf, timeAxesUsed } from '../core/anim';
+import type { CanvasStyle } from '../render/theme';
+import { THEMES, applyThemeCss, themeById } from '../render/theme';
 import type { Shape } from '../core/shape';
-import { cloneShape, mergeShapes, nextColor, padShape, rotateShape, scaleShape, shapeCenter, translateShape, usedDim } from '../core/shape';
+import { cloneShape, mergeShapes, nextColor, padShape, setPalette, rotateShape, scaleShape, translateShape, usedDim } from '../core/shape';
 import type { PrimitiveKind } from '../core/primitives';
 import { PRIMITIVES, makePrimitive } from '../core/primitives';
 import type { BoolOp } from '../core/polytope';
@@ -51,8 +55,13 @@ export class App {
   sliceBusy: string | null = null;
   sliceWorker: Worker | null = null;
   saveTimer = 0;
+  style!: CanvasStyle;
+  /** centroid of each shape's base geometry (animation pivot), keyed by shape id */
+  pivots = new Map<string, { rev: number; c: Vec }>();
+  lastFrame = 0;
 
   constructor() {
+    this.applyTheme(loadPref('ndm.theme', 'dark'), false);
     this.load();
     this.buildStaticUi();
     onLangChange(() => this.refreshTexts());
@@ -61,8 +70,11 @@ export class App {
     this.bindPointer();
     this.bindKeys();
     this.refreshAll();
-    const loop = () => {
+    const loop = (now: number) => {
+      const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
+      this.lastFrame = now;
       if (this.S.autoRotate) this.autoStep();
+      if (this.S.playing && this.S.timeDims > 0 && this.hasAnimation()) this.tick(dt);
       if (this.dirty) this.draw();
       requestAnimationFrame(loop);
     };
@@ -78,6 +90,8 @@ export class App {
       dim: S.dim,
       maxDim: S.maxDim,
       N: S.N,
+      timeDims: S.timeDims,
+      timeRates: S.timeRates,
       shapes: S.shapes,
     });
   }
@@ -92,6 +106,8 @@ export class App {
       S.shapes = (o.shapes as Shape[]).filter((s) => Array.isArray(s.verts));
       for (const s of S.shapes) padShape(s, S.N);
       if (!keepView) {
+        S.timeDims = Math.max(0, Math.min(MAX_TIME_DIMS, o.timeDims ?? 0));
+        if (Array.isArray(o.timeRates)) S.timeRates = S.timeRates.map((r, i) => Number(o.timeRates[i] ?? r));
         S.dim = Math.max(0, Math.min(S.maxDim, o.dim ?? 3));
         fitRotationToDim(S);
       }
@@ -198,6 +214,19 @@ export class App {
     const md = $<HTMLInputElement>('maxDim');
     md.onchange = () => this.setMaxDim(clampInt(md.value, 1, 20, 10));
 
+    // time dimensions
+    const ts = $<HTMLInputElement>('timeSlider');
+    ts.max = String(MAX_TIME_DIMS);
+    ts.oninput = () => this.setTimeDims(Number(ts.value));
+    $('btnPlay').onclick = () => { this.S.playing = !this.S.playing; this.refreshTime(); };
+    $('btnTimeReset').onclick = () => { this.S.times = this.S.times.map(() => 0); this.refreshClock(); this.dirty = true; };
+
+    // theme
+    const thSel = $<HTMLSelectElement>('themeSel');
+    for (const th of THEMES) thSel.add(new Option(th.id, th.id));
+    thSel.value = this.S.theme;
+    thSel.onchange = () => this.applyTheme(thSel.value);
+
     // tools
     $('segTool').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       b.onclick = () => { this.S.tool = b.dataset.tool as AppState['tool']; this.refreshTools(); this.dirty = true; };
@@ -282,6 +311,72 @@ export class App {
     $('bMerge').onclick = () => this.doMerge();
   }
 
+  applyTheme(id: string, save = true): void {
+    const th = themeById(id);
+    this.S.theme = th.id;
+    applyThemeCss(th);
+    this.style = th.canvas;
+    setPalette(th.palette);
+    if (save) savePref('ndm.theme', th.id);
+    const sel = document.getElementById('themeSel') as HTMLSelectElement | null;
+    if (sel) sel.value = th.id;
+    this.dirty = true;
+  }
+
+  setTimeDims(n: number): void {
+    const S = this.S;
+    S.timeDims = Math.max(0, Math.min(MAX_TIME_DIMS, n));
+    this.refreshTime();
+    this.scheduleSave();
+    this.dirty = true;
+  }
+
+  /** Time row + per-axis rate sliders. */
+  refreshTime(): void {
+    const S = this.S;
+    $<HTMLInputElement>('timeSlider').value = String(S.timeDims);
+    $('timeOut').textContent = String(S.timeDims);
+    $('timeBig').textContent = S.timeDims > 0 ? ` + ${S.timeDims}` : '';
+    $('timeBigT').style.display = S.timeDims > 0 ? '' : 'none';
+    const play = $<HTMLButtonElement>('btnPlay');
+    play.textContent = S.playing ? '⏸' : '▶';
+    play.title = t(S.playing ? 'pause' : 'play');
+    play.setAttribute('aria-label', play.title);
+    play.disabled = S.timeDims === 0;
+    $<HTMLButtonElement>('btnTimeReset').disabled = S.timeDims === 0;
+    const box = $('timeRates');
+    box.innerHTML = '';
+    $('timeRatesHead').style.display = S.timeDims > 0 ? '' : 'none';
+    for (let i = 0; i < S.timeDims; i++) {
+      const row = document.createElement('label');
+      row.className = 'row';
+      const name = document.createElement('span');
+      name.textContent = `t${SUB[i]}`;
+      const r = document.createElement('input');
+      r.type = 'range';
+      r.min = '-3';
+      r.max = '3';
+      r.step = '0.1';
+      r.value = String(S.timeRates[i]);
+      const out = document.createElement('output');
+      out.textContent = `×${S.timeRates[i].toFixed(1)}`;
+      r.oninput = () => {
+        S.timeRates[i] = Number(r.value);
+        out.textContent = `×${S.timeRates[i].toFixed(1)}`;
+        this.scheduleSave();
+      };
+      row.append(name, r, out);
+      box.appendChild(row);
+    }
+    this.refreshClock();
+  }
+
+  refreshClock(): void {
+    const S = this.S;
+    const el = $('timeClock');
+    el.textContent = S.timeDims === 0 ? '' : S.times.slice(0, S.timeDims).map((x, i) => `t${SUB[i]} ${x.toFixed(1)}`).join('  ');
+  }
+
   togglePanel(id: string, force?: boolean): void {
     const p = $(id);
     const open = force ?? !p.classList.contains('open');
@@ -300,6 +395,8 @@ export class App {
 
   refreshTexts(): void {
     translateDom();
+    $<HTMLSelectElement>('themeSel').querySelectorAll('option').forEach((o) => { o.textContent = t(`theme_${o.value}` as Key); });
+    this.refreshTime();
     document.title = `${t('appTitle')} v${VERSION}`;
     $('primList').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       b.querySelector('.nm')!.textContent = t(`prim_${b.dataset.prim}` as Key);
@@ -523,7 +620,9 @@ export class App {
     this.refreshDim();
     this.refreshView();
     this.refreshShapes();
-    this.toast(t(`desc_${k}` as Key), 9000);
+    const axes = timeAxesUsed(s.anim);
+    if (axes > 0 && S.timeDims === 0) this.setTimeDims(1);
+    this.toast(`${t(`desc_${k}` as Key)}\n${t('animHint', { n: axes })}`, 10000);
     if (window.innerWidth <= 760) this.togglePanel('panelAdd', false);
   }
 
@@ -595,8 +694,11 @@ export class App {
   doBoolean(op: BoolOp): void {
     const sel = this.selShapes();
     if (sel.length !== 2) { this.toast(t('needTwo')); return; }
-    const [a, b] = sel;
-    if (!a.cells || !b.cells) { this.toast(t('needSolid')); return; }
+    const [a0, b0] = sel;
+    if (!a0.cells || !b0.cells) { this.toast(t('needSolid')); return; }
+    // booleans work on what you see: animated shapes are frozen in their current pose
+    const a = this.baked(a0);
+    const b = this.baked(b0);
     const D = Math.max(1, usedDim(a), usedDim(b));
     this.toast('…');
     setTimeout(() => {
@@ -604,8 +706,8 @@ export class App {
       if (!r) { this.toast(t('emptyResult')); return; }
       padShape(r, this.S.N);
       this.snapshot();
-      const idx = this.S.shapes.indexOf(a);
-      this.S.shapes = this.S.shapes.filter((s) => s !== a && s !== b);
+      const idx = this.S.shapes.indexOf(a0);
+      this.S.shapes = this.S.shapes.filter((s) => s !== a0 && s !== b0);
       this.S.shapes.splice(Math.min(idx, this.S.shapes.length), 0, r);
       this.S.selected = [r.id];
       this.touch();
@@ -618,7 +720,7 @@ export class App {
     const sel = this.selShapes();
     if (sel.length < 2) { this.toast(t('needTwo')); return; }
     this.snapshot();
-    const m = mergeShapes(sel, sel[0].color);
+    const m = mergeShapes(sel.map((s) => this.baked(s)), sel[0].color);
     const idx = this.S.shapes.indexOf(sel[0]);
     this.S.shapes = this.S.shapes.filter((s) => !sel.includes(s));
     this.S.shapes.splice(Math.min(idx, this.S.shapes.length), 0, m);
@@ -678,7 +780,7 @@ export class App {
       this.sliceWorker.onmessage = (e: MessageEvent<SliceGeo & { key: string }>) => {
         const { key, verts, edges } = e.data;
         if (key === this.sliceBusy) {
-          this.sliceCache.set(key, { verts, edges });
+          if (!key.includes('|anim')) this.sliceCache.set(key, { verts, edges });
           this.lastSlice.set(key.split('|')[0], { verts, edges });
           this.slicePending.delete(key);
           this.sliceBusy = null;
@@ -699,22 +801,82 @@ export class App {
     this.ensureSliceWorker().postMessage(job);
   }
 
+  /** Animation pivot: centroid of the base geometry (cached per geometry revision). */
+  pivot(s: Shape): Vec {
+    const c = this.pivots.get(s.id);
+    if (c && c.rev === this.S.rev) return c.c;
+    const p = centroid(s.verts, this.S.N);
+    this.pivots.set(s.id, { rev: this.S.rev, c: p });
+    return p;
+  }
+
+  pose(s: Shape): Pose | null {
+    const S = this.S;
+    if (!s.anim || S.timeDims === 0) return null;
+    return poseOf(s.anim, S.times, S.timeDims, S.N, this.pivot(s));
+  }
+
+  posedVerts(s: Shape): Vec[] {
+    const p = this.pose(s);
+    return p ? applyPose(p, s.verts) : s.verts;
+  }
+
+  /** Copy of the shape frozen in its current pose, without animation. */
+  baked(s: Shape): Shape {
+    const c = cloneShape(s);
+    c.id = s.id;
+    c.verts = this.posedVerts(s);
+    c.anim = undefined;
+    return c;
+  }
+
+  /** Map a displacement seen on screen back to the shape's un-animated coordinates. */
+  toBase(s: Shape, delta: Vec): Vec {
+    const p = this.pose(s);
+    if (!p) return delta;
+    const inv = invert(p.A);
+    return inv ? matVec(inv, delta) : delta;
+  }
+
+  hasAnimation(): boolean {
+    return this.S.shapes.some((s) => s.visible && s.anim && s.anim.some((tr) => tr.t < this.S.timeDims));
+  }
+
+  tick(dt: number): void {
+    const S = this.S;
+    for (let i = 0; i < S.timeDims; i++) S.times[i] += dt * S.timeRates[i];
+    this.dirty = true;
+    this.refreshClock();
+  }
+
   geometryFor(s: Shape): { verts: Vec[]; edges: [number, number][]; editable: boolean } {
     const S = this.S;
+    const pose = this.pose(s);
     if (S.mode === 'slice' && S.dim < usedDim(s)) {
       if (!s.cells) return { verts: [], edges: [], editable: false };
       const D = Math.max(usedDim(s), S.dim);
-      const key = `${s.id}|${S.rev}|${S.dim}|${S.sliceOffset.slice(0, D).join(',')}`;
-      const g = this.sliceCache.get(key);
+      const base = `${s.id}|${S.rev}|${S.dim}|${S.sliceOffset.slice(0, D).join(',')}`;
+      const last = { ...(this.lastSlice.get(s.id) ?? { verts: [], edges: [] }), editable: false };
+      if (pose) {
+        // animated: always slice the latest pose, one job per shape at a time
+        const inFlight = (this.sliceBusy?.startsWith(`${s.id}|`) ?? false) || this.sliceQueue.some((j) => j.key.startsWith(`${s.id}|`));
+        if (!inFlight) {
+          const key = `${base}|anim${S.times.slice(0, S.timeDims).map((x) => x.toFixed(3)).join(',')}`;
+          this.sliceQueue.push({ key, shape: { ...this.baked(s) }, d: S.dim, D, offsets: S.sliceOffset.slice() });
+          this.pumpSlices();
+        }
+        return last;
+      }
+      const g = this.sliceCache.get(base);
       if (g) return { ...g, editable: false };
-      if (!this.slicePending.has(key)) {
-        this.slicePending.add(key);
-        this.sliceQueue.push({ key, shape: JSON.parse(JSON.stringify(s)), d: S.dim, D, offsets: S.sliceOffset.slice() });
+      if (!this.slicePending.has(base)) {
+        this.slicePending.add(base);
+        this.sliceQueue.push({ key: base, shape: JSON.parse(JSON.stringify(s)), d: S.dim, D, offsets: S.sliceOffset.slice() });
         this.pumpSlices();
       }
-      return { ...(this.lastSlice.get(s.id) ?? { verts: [], edges: [] }), editable: false };
+      return last;
     }
-    return { verts: s.verts, edges: s.edges, editable: true };
+    return { verts: pose ? applyPose(pose, s.verts) : s.verts, edges: s.edges, editable: true };
   }
 
   draw(): void {
@@ -739,7 +901,7 @@ export class App {
       });
       this.drawn.push({ shapeId: s.id, verts: g.verts, edges: g.edges, screen: [], editable: g.editable });
     }
-    const res = render(this.ctx, this.projector, items, this.dpr);
+    const res = render(this.ctx, this.projector, items, this.dpr, this.style);
     res.screen.forEach((sc, i) => (this.drawn[i].screen = sc));
   }
 
@@ -929,18 +1091,19 @@ export class App {
         const sh = S.shapes.find((s) => s.id === (drag as { shapeId: string }).shapeId);
         if (!sh) return;
         const v = sh.verts[drag.index];
-        const delta = this.screenToWorldDelta(v, dx, dy);
+        const seen = this.posedVerts(sh)[drag.index];
+        const delta = this.screenToWorldDelta(seen, dx, dy);
         if (!delta) return;
         if (!snap) { this.snapshot(); snap = true; }
-        sh.verts[drag.index] = add(v, delta);
+        sh.verts[drag.index] = add(v, this.toBase(sh, delta));
         this.touch();
       } else if (drag.kind === 'shape') {
         const shapes = drag.ids.map((id) => S.shapes.find((s) => s.id === id)).filter((s): s is Shape => !!s);
         if (!shapes.length) return;
-        const delta = this.screenToWorldDelta(shapeCenter(shapes[0], S.N), dx, dy);
+        const delta = this.screenToWorldDelta(centroid(this.posedVerts(shapes[0]), S.N), dx, dy);
         if (!delta) return;
         if (!snap) { this.snapshot(); snap = true; }
-        for (const s of shapes) translateShape(s, delta);
+        for (const s of shapes) translateShape(s, this.toBase(s, delta));
         this.touch();
       }
     });
@@ -1015,3 +1178,13 @@ function segDist(px: number, py: number, ax: number, ay: number, bx: number, by:
   tt = clamp(tt, 0, 1);
   return Math.hypot(px - (ax + tt * vx), py - (ay + tt * vy));
 }
+
+function loadPref(key: string, def: string): string {
+  try { return localStorage.getItem(key) ?? def; } catch { return def; }
+}
+
+function savePref(key: string, v: string): void {
+  try { localStorage.setItem(key, v); } catch { /* ignore */ }
+}
+
+const SUB = ['₁', '₂', '₃', '₄', '₅', '₆'];

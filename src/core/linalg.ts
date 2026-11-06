@@ -136,3 +136,24 @@ export function solve2(a: number, b: number, c: number, d: number, r0: number, r
   if (Math.abs(det) < 1e-14) return null;
   return [(r0 * d - b * r1) / det, (a * r1 - c * r0) / det];
 }
+
+/** Inverse of a square matrix (Gauss–Jordan with partial pivoting). Returns null if singular. */
+export function invert(m: Mat): Mat | null {
+  const n = m.length;
+  const a = m.map((r, i) => r.concat(identity(n)[i]));
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(a[r][c]) > Math.abs(a[p][c])) p = r;
+    if (Math.abs(a[p][c]) < 1e-12) return null;
+    [a[c], a[p]] = [a[p], a[c]];
+    const d = a[c][c];
+    for (let j = 0; j < 2 * n; j++) a[c][j] /= d;
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = a[r][c];
+      if (f === 0) continue;
+      for (let j = 0; j < 2 * n; j++) a[r][j] -= f * a[c][j];
+    }
+  }
+  return a.map((r) => r.slice(n));
+}

@@ -35,7 +35,7 @@
       <main id="stage">
         <canvas id="view"></canvas>
         <div id="hud">
-          <div class="dim-badge"><span id="dimBig">3</span><small>D</small></div>
+          <div class="dim-badge"><span id="dimBig">3</span><small>D</small><span id="timeBig"></span><small id="timeBigT">T</small></div>
           <div id="hudInfo"></div>
           <div class="spinner" aria-hidden="true"></div>
         </div>
@@ -54,6 +54,7 @@
 
           <details class="view-settings" open>
             <summary data-i18n="display"></summary>
+            <label class="row"><span data-i18n="theme"></span><select id="themeSel"></select></label>
             <div class="seg" id="segMode">
               <button data-mode="project" data-i18n="mode_project"></button>
               <button data-mode="slice" data-i18n="mode_slice"></button>
@@ -71,6 +72,8 @@
               <label><input type="checkbox" id="chkAuto" /> <span data-i18n="autoRotate"></span></label>
             </div>
             <button id="btnResetView" data-i18n="resetView"></button>
+            <h4 id="timeRatesHead" data-i18n="timeRates"></h4>
+            <div id="timeRates" class="rates"></div>
           </details>
         </aside>
 
@@ -116,6 +119,14 @@
           <output id="dimOut">3</output>
           <label class="max"><span data-i18n="maxDim"></span><input id="maxDim" type="number" min="1" max="20" value="10" /></label>
         </div>
+        <div class="dimrow timerow">
+          <label for="timeSlider" data-i18n="timeDims"></label>
+          <input id="timeSlider" type="range" min="0" max="6" step="1" value="0" />
+          <output id="timeOut">0</output>
+          <button id="btnPlay" class="icon">⏸</button>
+          <button id="btnTimeReset" class="icon" data-i18n-title="resetTime">⟲</button>
+          <span id="timeClock" class="clock"></span>
+        </div>
         <div class="toolrow">
           <button id="tAdd" class="toggle" data-panel="panelAdd">＋ <span data-i18n="add"></span></button>
           <div class="seg tools" id="segTool">
@@ -141,6 +152,7 @@
           <li data-i18n="help4"></li>
           <li data-i18n="help5"></li>
           <li data-i18n="help6"></li>
+          <li data-i18n="help7"></li>
         </ol>
         <form method="dialog"><button data-i18n="close"></button></form>
       </dialog>

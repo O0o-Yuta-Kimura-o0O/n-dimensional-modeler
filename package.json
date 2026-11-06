@@ -1,7 +1,7 @@
 {
   "name": "n-dimensional-modeler",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "N-Dimensional Modeler / n次元モデラー — model and view polytopes in 0–10+ dimensions",
   "type": "module",
   "scripts": {
