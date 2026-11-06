@@ -1,7 +1,7 @@
 {
   "name": "n-dimensional-modeler",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "N-Dimensional Modeler / n次元モデラー — model and view polytopes in 0–10+ dimensions",
   "type": "module",
   "scripts": {
@@ -15,5 +15,12 @@
     "typescript": "^5.9.3",
     "vite": "^6.4.5",
     "vitest": "^3.2.7"
-  }
+  },
+  "license": "MIT",
+  "author": "Yuta Kimura",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/O0o-Yuta-Kimura-o0O/n-dimensional-modeler.git"
+  },
+  "homepage": "https://o0o-yuta-kimura-o0o.github.io/n-dimensional-modeler/"
 }

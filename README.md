@@ -1,8 +1,10 @@
 # n次元モデラー / N-Dimensional Modeler
 
-**v0.3.0** — 空間の次元をスライダーで 0〜10（上限変更可、最大20）に切り替えながら、多次元の形状を作り、眺め、変形し、ブーリアン演算できるモデラー兼ビューワー。
+**v0.3.1** — 空間の次元をスライダーで 0〜10（上限変更可、最大20）に切り替えながら、多次元の形状を作り、眺め、変形し、ブーリアン演算できるモデラー兼ビューワー。
 
 A modeler/viewer for polytopes in any dimension. Drag a slider to change the dimension of space (0–10 by default, adjustable up to 20) at any time without losing data.
+
+**▶ Web版 / Live demo: https://o0o-yuta-kimura-o0o.github.io/n-dimensional-modeler/**
 
 ## 機能 / Features
 
@@ -78,4 +80,15 @@ Vite + TypeScript、依存ライブラリなし（描画は Canvas 2D）。`dist
 
 ## バージョン
 
-`v0.0.0` から順にナンバリング（現在 v0.3.0。機能追加で2桁目、修正で3桁目を上げます）。変更点は [CHANGELOG.md](CHANGELOG.md)。
+`v0.0.0` から順にナンバリング（現在 v0.3.1。機能追加で2桁目、修正で3桁目を上げます）。変更点は [CHANGELOG.md](CHANGELOG.md)。
+
+## 作者 / Credits
+
+- **木村祐太 (Yuta Kimura)** — 企画・仕様・ディレクション / concept, specification, direction
+- **Claude Opus 5.5** (Anthropic, `claude-opus-5-5`, via Claude Code) — 設計・実装・テスト / design, implementation, tests
+
+開発時のチャットのやり取りは [docs/chat-log.md](docs/chat-log.md) に記録しています。 / The development conversation is recorded in [docs/chat-log.md](docs/chat-log.md).
+
+## ライセンス / License
+
+[MIT License](LICENSE) © 2026 Yuta Kimura (木村祐太) — 商用・非商用を問わず、自由に使用・改変・再配布できます（著作権表示とライセンス文の同梱のみ必要）。 / Free to use, modify and redistribute, commercially or not; just keep the copyright and license notice.
