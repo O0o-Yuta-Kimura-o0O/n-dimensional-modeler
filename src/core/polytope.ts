@@ -510,7 +510,7 @@ function sliceCellChain(c: WCell, d: number, offsets: number[]): WCell | null {
 }
 
 /** Axis-aligned box as a working cell in R^d (vertices carry their box facets). */
-function boxCell(lo: Vec, hi: Vec): WCell {
+export function boxCell(lo: Vec, hi: Vec): WCell {
   const d = lo.length;
   const planes: Plane[] = [];
   for (let i = 0; i < d; i++) {

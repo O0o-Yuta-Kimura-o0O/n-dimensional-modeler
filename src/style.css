@@ -55,8 +55,9 @@ input[type='range'] { accent-color: var(--accent); }
 .menu[hidden] { display: none; }
 .menu button { text-align: left; }
 
-#stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
-#view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; background: var(--canvas-bg); }
+#stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--canvas-bg); }
+/* the background lives on #stage: Chrome may keep a canvas's old solid background when it changes to a gradient */
+#view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; background: transparent; }
 #hud { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; }
 .dim-badge { font-family: var(--font-head); font-size: 34px; font-weight: 700; letter-spacing: -0.02em; text-shadow: 0 2px 14px var(--badge-glow); white-space: nowrap; }
 .dim-badge small { font-size: 16px; color: var(--muted); margin-left: 2px; }
@@ -141,9 +142,33 @@ dialog h3 { font-family: var(--font-head); text-transform: var(--head-transform)
 dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 dialog li { margin-bottom: 8px; }
 
+/* ── formula window ───────────────────────────────────────── */
+.fx-dlg { width: min(620px, 94vw); }
+.fx-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fx-head h3 { margin: 0; }
+#fxPreset { width: 100%; margin: 10px 0 8px; }
+#fxSrc { width: 100%; min-height: 220px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-small); padding: 10px; font: 13px/1.55 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: 0; tab-size: 2; }
+#fxSrc:focus { outline: none; border-color: var(--accent); }
+.fx-error { min-height: 1.4em; margin: 6px 0; color: var(--danger); font-size: 13px; white-space: pre-wrap; }
+.fx-actions { display: flex; justify-content: flex-end; gap: 8px; }
+button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+button.primary:hover { filter: brightness(1.08); }
+.prim-list .formula-btn .glyph { font-style: italic; font-family: Georgia, 'Times New Roman', serif; }
+pre.code, dialog code { font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-small); }
+pre.code { padding: 8px 10px; overflow-x: auto; margin: 6px 0; }
+dialog code { padding: 1px 4px; }
+.fx-rules li { margin-bottom: 6px; }
+#helpDlg { max-height: 86vh; overflow-y: auto; }
+#helpDlg h4 { margin: 14px 0 4px; color: var(--accent); }
+#themeSel { max-width: 150px; }
+
 /* ── theme accents ───────────────────────────────────────────── */
-[data-theme='blueprint'] .panel, [data-theme='blueprint'] .topbar, [data-theme='blueprint'] .bottombar { border-style: dashed; }
 [data-theme='blueprint'] .dim-badge { font-weight: 400; }
+[data-theme='swiss'] button.on, [data-theme='swiss'] .seg button.on, [data-theme='swiss'] .toggle.on, [data-theme='swiss'] .shape-list li.sel { color: #fff; border-color: #111; }
+[data-theme='swiss'] .shape-list li.sel .meta { color: #ccc; }
+[data-theme='swiss'] .dim-badge { font-weight: 800; letter-spacing: -0.04em; }
+[data-theme='terminal'] .dim-badge { font-weight: 400; }
+[data-theme='terminal'] #dimOut, [data-theme='terminal'] #timeOut { text-shadow: 0 0 8px currentColor; }
 [data-theme='sumi'] .brand .logo { color: var(--accent); }
 [data-theme='sumi'] .dim-badge { font-weight: 600; }
 [data-theme='sumi'] button.on, [data-theme='sumi'] .seg button.on { border-color: var(--accent); color: var(--accent); }
@@ -154,7 +179,11 @@ dialog li { margin-bottom: 8px; }
 [data-theme='obsidian'] .topbar, [data-theme='obsidian'] .bottombar { border-color: rgba(212, 178, 106, 0.28); }
 
 @media (max-width: 760px) {
-  .brand > span:nth-child(2) { font-size: 13px; }
+  #themeSel { max-width: 92px; }
+  #langSel { max-width: 92px; }
+  .brand { flex: 0 0 auto; }
+  .brand > span:nth-child(2), .brand .ver { display: none; }
+  .top-actions { gap: 4px; }
   .panel { top: auto; bottom: 0; left: 0 !important; right: 0 !important; width: auto; max-height: 58%; border-radius: 14px 14px 0 0; }
   .toolrow .tools small { display: none; }
   .toolrow .toggle span { display: none; }

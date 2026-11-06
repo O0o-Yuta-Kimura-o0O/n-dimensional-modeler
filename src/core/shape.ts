@@ -27,6 +27,14 @@ export interface Shape {
   cells: Cell[] | null;
   /** animation tracks bound to time dimensions */
   anim?: Track[];
+  /** source formula (shapes created from the formula window) */
+  formula?: {
+    src: string;
+    /** formula reads t1…t6: geometry is rebuilt every frame */
+    usesTime: boolean;
+    /** centroid of the geometry at creation; moving the shape shifts the rebuilt geometry */
+    center: number[];
+  };
 }
 
 let idCounter = 0;
@@ -50,6 +58,7 @@ export function cloneShape(s: Shape): Shape {
     edges: s.edges.map((e) => [e[0], e[1]] as [number, number]),
     cells: s.cells ? s.cells.map((c) => ({ verts: c.verts.slice(), facets: c.facets.map((f) => f.slice()) })) : null,
     anim: s.anim ? JSON.parse(JSON.stringify(s.anim)) : undefined,
+    formula: s.formula ? { ...s.formula, center: s.formula.center.slice() } : undefined,
   };
 }
 

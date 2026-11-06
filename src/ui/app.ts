@@ -5,7 +5,7 @@ import { MAX_TIME_DIMS, applyPose, poseOf, timeAxesUsed } from '../core/anim';
 import type { CanvasStyle } from '../render/theme';
 import { THEMES, applyThemeCss, themeById } from '../render/theme';
 import type { Shape } from '../core/shape';
-import { cloneShape, mergeShapes, nextColor, padShape, setPalette, rotateShape, scaleShape, translateShape, usedDim } from '../core/shape';
+import { cloneShape, mergeShapes, newId, nextColor, padShape, setPalette, rotateShape, scaleShape, translateShape, usedDim } from '../core/shape';
 import type { PrimitiveKind } from '../core/primitives';
 import { PRIMITIVES, makePrimitive } from '../core/primitives';
 import type { BoolOp } from '../core/polytope';
@@ -13,6 +13,7 @@ import { booleanShapes } from '../core/polytope';
 import type { PhysicsKind } from '../core/physics';
 import { PHYSICS, PHYSICS_DIM, makePhysics } from '../core/physics';
 import type { SliceJob } from '../core/sliceWorker';
+import { FORMULA_PRESETS, FormulaError, buildFormula } from '../core/formula';
 import type { DrawItem, Projected } from '../render/view';
 import { Projector, axisName, render } from '../render/view';
 import type { Key } from '../i18n';
@@ -26,9 +27,10 @@ const MAX_VERTS = 20000;
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 
-const GLYPH: Record<PrimitiveKind | PhysicsKind, string> = {
+const GLYPH: Record<PrimitiveKind | PhysicsKind | 'formula', string> = {
   point: '•', simplex: '△', hypercube: '□', orthoplex: '◇', polygon: '⬡', prism: '⬢',
   pyramid: '▲', duoprism: '⊞', cell24: '✳', sphere: '○',
+  formula: 'ƒ',
   lightcone: '⧗', hopf: '◎', calabiyau: '❀', quasicrystal: '✦', e8: '✺', string10: '≋',
 };
 
@@ -58,6 +60,10 @@ export class App {
   style!: CanvasStyle;
   /** centroid of each shape's base geometry (animation pivot), keyed by shape id */
   pivots = new Map<string, { rev: number; c: Vec }>();
+  /** time-dependent formula shapes rebuilt for the current clocks */
+  formulaCache = new Map<string, { key: string; shape: Shape }>();
+  /** shape being edited in the formula window (null = new shape) */
+  formulaTarget: string | null = null;
   lastFrame = 0;
 
   constructor() {
@@ -195,6 +201,13 @@ export class App {
       b.onclick = () => this.addPrimitive(k);
       list.appendChild(b);
     }
+    const fb = document.createElement('button');
+    fb.dataset.prim = 'formula';
+    fb.className = 'formula-btn';
+    fb.innerHTML = `<span class="glyph">${GLYPH.formula}</span><span class="nm"></span>`;
+    fb.onclick = () => this.openFormula(null);
+    list.appendChild(fb);
+    this.buildFormulaDialog();
     const phys = $('physList');
     for (const k of PHYSICS) {
       const b = document.createElement('button');
@@ -304,11 +317,98 @@ export class App {
     ci.oninput = () => { for (const s of this.selShapes()) s.color = ci.value; this.touch(); this.refreshShapeList(); };
     $('btnDup').onclick = () => this.duplicateSelected();
     $('btnDel').onclick = () => this.deleteSelected();
+    $('btnEditFx').onclick = () => { const s = this.selShapes()[0]; if (s?.formula) this.openFormula(s.id); };
     $('btnDeselect').onclick = () => { this.S.selected = []; this.refreshShapes(); this.dirty = true; };
     $('bUnion').onclick = () => this.doBoolean('union');
     $('bInter').onclick = () => this.doBoolean('intersect');
     $('bSub').onclick = () => this.doBoolean('subtract');
     $('bMerge').onclick = () => this.doMerge();
+  }
+
+  // ───────────────────────────── formula window
+  buildFormulaDialog(): void {
+    const sel = $<HTMLSelectElement>('fxPreset');
+    sel.innerHTML = '';
+    sel.add(new Option('—', ''));
+    for (const p of FORMULA_PRESETS) sel.add(new Option(p.id, p.id));
+    sel.onchange = () => {
+      const p = FORMULA_PRESETS.find((x) => x.id === sel.value);
+      if (p) $<HTMLTextAreaElement>('fxSrc').value = p.src;
+      $('fxError').textContent = '';
+    };
+    $('fxApply').onclick = () => this.applyFormula();
+    $('fxCancel').onclick = () => $<HTMLDialogElement>('formulaDlg').close();
+    $('fxHelp').onclick = () => { $<HTMLDialogElement>('formulaDlg').close(); $<HTMLDialogElement>('helpDlg').showModal(); $('helpFormula').scrollIntoView(); };
+    $<HTMLTextAreaElement>('fxSrc').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.applyFormula(); }
+    });
+  }
+
+  refreshFormulaTexts(): void {
+    $<HTMLSelectElement>('fxPreset').querySelectorAll('option').forEach((o) => {
+      if (o.value) o.textContent = t(`fx_preset_${o.value}` as Key);
+      else o.textContent = t('fx_presets');
+    });
+  }
+
+  openFormula(targetId: string | null): void {
+    this.formulaTarget = targetId;
+    const target = targetId ? this.S.shapes.find((s) => s.id === targetId) : null;
+    const ta = $<HTMLTextAreaElement>('fxSrc');
+    if (target?.formula) ta.value = target.formula.src;
+    else if (!ta.value.trim()) ta.value = FORMULA_PRESETS[0].src;
+    $('fxError').textContent = '';
+    $('fxTitle').textContent = t(target ? 'fx_edit' : 'fx_title');
+    $('fxApply').textContent = t(target ? 'fx_update' : 'fx_add');
+    $<HTMLSelectElement>('fxPreset').value = '';
+    $<HTMLDialogElement>('formulaDlg').showModal();
+    ta.focus();
+  }
+
+  formulaErrorText(e: FormulaError): string {
+    const msg = t(`fx_err_${e.code}` as Key, { detail: e.detail });
+    return e.line > 0 ? t('fx_line', { line: e.line, msg }) : msg;
+  }
+
+  applyFormula(): void {
+    const S = this.S;
+    const src = $<HTMLTextAreaElement>('fxSrc').value;
+    let r;
+    try {
+      r = buildFormula(src, S.times.map((x, i) => (i < S.timeDims ? x : 0)));
+    } catch (e) {
+      $('fxError').textContent = e instanceof FormulaError ? this.formulaErrorText(e) : String(e);
+      return;
+    }
+    if (r.verts.length > MAX_VERTS) { $('fxError').textContent = t('tooBig', { n: r.verts.length }); return; }
+    if (r.dim > S.maxDim) S.maxDim = r.dim;
+    ensureStorage(S, Math.max(S.maxDim, r.dim));
+    this.snapshot();
+    const verts = r.verts.map((v) => padTo(v, S.N));
+    const formula = { src, usesTime: r.usesTime, center: centroid(verts, S.N) };
+    const old = this.formulaTarget ? S.shapes.find((x) => x.id === this.formulaTarget) : null;
+    if (old) {
+      old.verts = verts;
+      old.edges = r.edges;
+      old.cells = r.cells;
+      old.label = r.label;
+      old.formula = formula;
+    } else {
+      const sh: Shape = { id: newId(), kind: 'formula', label: r.label, color: nextColor(), visible: true, verts, edges: r.edges, cells: r.cells, formula };
+      S.shapes.push(sh);
+      if (S.multi) S.selected.push(sh.id);
+      else S.selected = [sh.id];
+    }
+    if (r.dim > S.dim) S.dim = r.dim;
+    fitRotationToDim(S);
+    this.formulaCache.clear();
+    this.touch();
+    this.refreshDim();
+    this.refreshShapes();
+    $<HTMLDialogElement>('formulaDlg').close();
+    if (r.usesTime && S.timeDims === 0) this.setTimeDims(1);
+    this.toast(`${t(r.mode === 'polytope' ? 'fx_made_solid' : 'fx_made_wire')} · ${t('stats', { v: r.verts.length, e: r.edges.length })}`);
+    if (window.innerWidth <= 760) this.togglePanel('panelAdd', false);
   }
 
   applyTheme(id: string, save = true): void {
@@ -395,6 +495,7 @@ export class App {
 
   refreshTexts(): void {
     translateDom();
+    this.refreshFormulaTexts();
     $<HTMLSelectElement>('themeSel').querySelectorAll('option').forEach((o) => { o.textContent = t(`theme_${o.value}` as Key); });
     this.refreshTime();
     document.title = `${t('appTitle')} v${VERSION}`;
@@ -477,6 +578,7 @@ export class App {
     const sel = this.selShapes();
     $('selBox').hidden = sel.length === 0;
     if (sel.length) $<HTMLInputElement>('colorIn').value = sel[sel.length - 1].color;
+    $('btnEditFx').hidden = !(sel.length === 1 && sel[0].formula);
     const used = this.S.shapes.reduce((m, s) => Math.max(m, usedDim(s)), 0);
     $('hudInfo').textContent = used > this.S.dim ? t('hiddenInfo', { d: this.S.dim }) : '';
   }
@@ -822,11 +924,13 @@ export class App {
   }
 
   /** Copy of the shape frozen in its current pose, without animation. */
-  baked(s: Shape): Shape {
+  baked(s0: Shape): Shape {
+    const s = this.effective(s0);
     const c = cloneShape(s);
     c.id = s.id;
     c.verts = this.posedVerts(s);
     c.anim = undefined;
+    if (c.formula) c.formula = { ...c.formula, usesTime: false };
     return c;
   }
 
@@ -839,7 +943,7 @@ export class App {
   }
 
   hasAnimation(): boolean {
-    return this.S.shapes.some((s) => s.visible && s.anim && s.anim.some((tr) => tr.t < this.S.timeDims));
+    return this.S.shapes.some((s) => s.visible && ((s.anim && s.anim.some((tr) => tr.t < this.S.timeDims)) || s.formula?.usesTime));
   }
 
   tick(dt: number): void {
@@ -849,15 +953,40 @@ export class App {
     this.refreshClock();
   }
 
-  geometryFor(s: Shape): { verts: Vec[]; edges: [number, number][]; editable: boolean } {
+  /**
+   * The shape as it is right now: time-dependent formulas are rebuilt for the current clocks
+   * (shifted by however far the user has moved the shape since it was created).
+   */
+  effective(s: Shape): Shape {
     const S = this.S;
+    const f = s.formula;
+    if (!f?.usesTime || S.timeDims === 0) return s;
+    const times = S.times.map((x, i) => (i < S.timeDims ? x : 0));
+    const key = `${times.join(',')}|${S.rev}`;
+    const c = this.formulaCache.get(s.id);
+    if (c && c.key === key) return c.shape;
+    let shape = s;
+    try {
+      const r = buildFormula(f.src, times);
+      const now = centroid(s.verts, S.N);
+      const off = now.map((x, i) => x - (f.center[i] ?? 0));
+      shape = { ...s, verts: r.verts.map((v) => add(padTo(v, S.N), off)), edges: r.edges, cells: r.cells };
+    } catch { /* keep the stored geometry if the formula fails at this time */ }
+    this.formulaCache.set(s.id, { key, shape });
+    return shape;
+  }
+
+  geometryFor(s0: Shape): { verts: Vec[]; edges: [number, number][]; editable: boolean } {
+    const S = this.S;
+    const s = this.effective(s0);
+    const live = s !== s0;
     const pose = this.pose(s);
     if (S.mode === 'slice' && S.dim < usedDim(s)) {
       if (!s.cells) return { verts: [], edges: [], editable: false };
       const D = Math.max(usedDim(s), S.dim);
       const base = `${s.id}|${S.rev}|${S.dim}|${S.sliceOffset.slice(0, D).join(',')}`;
       const last = { ...(this.lastSlice.get(s.id) ?? { verts: [], edges: [] }), editable: false };
-      if (pose) {
+      if (pose || live) {
         // animated: always slice the latest pose, one job per shape at a time
         const inFlight = (this.sliceBusy?.startsWith(`${s.id}|`) ?? false) || this.sliceQueue.some((j) => j.key.startsWith(`${s.id}|`));
         if (!inFlight) {
@@ -876,7 +1005,7 @@ export class App {
       }
       return last;
     }
-    return { verts: pose ? applyPose(pose, s.verts) : s.verts, edges: s.edges, editable: true };
+    return { verts: pose ? applyPose(pose, s.verts) : s.verts, edges: s.edges, editable: !live };
   }
 
   draw(): void {
@@ -1188,3 +1317,7 @@ function savePref(key: string, v: string): void {
 }
 
 const SUB = ['₁', '₂', '₃', '₄', '₅', '₆'];
+
+function padTo(v: Vec, n: number): Vec {
+  return v.length >= n ? v : v.concat(new Array(n - v.length).fill(0));
+}

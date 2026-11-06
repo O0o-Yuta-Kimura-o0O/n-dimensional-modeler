@@ -156,6 +156,101 @@ export const THEMES: Theme[] = [
     },
     palette: ['#d4b26a', '#efe7d6', '#c98b6b', '#8fa3b8', '#b7a57a', '#9a8f7c', '#e9d9b0', '#a8604f'],
   },
+  {
+    // Nord: polar night + frost + aurora
+    id: 'nord',
+    dark: true,
+    css: {
+      '--bg': '#2e3440', '--bg2': '#353c4a', '--panel': 'rgba(59,66,82,0.92)', '--line': '#4c566a',
+      '--text': '#eceff4', '--muted': '#a3adbf', '--accent': '#88c0d0', '--accent2': '#b48ead', '--danger': '#bf616a',
+      '--on-bg': 'rgba(136,192,208,0.18)', '--hover': '#81a1c1', '--font': SANS, '--font-head': SANS, '--radius': '8px',
+      '--canvas-bg': 'radial-gradient(ellipse at 50% 30%, #3b4252 0%, #2e3440 75%)', '--badge-glow': 'rgba(136,192,208,0.35)',
+      '--letter': '0.01em', '--head-transform': 'none', '--toast-bg': 'rgba(46,52,64,0.95)',
+    },
+    canvas: {
+      bgInner: '#3b4252', bgOuter: '#2e3440', grid: 'rgba(216,222,233,0.06)', gridMajor: 0, gridMajorColor: '',
+      line: 1.4, glow: 0, composite: 'source-over', tint: '#d8dee9', mix: 0.15, vertexStroke: '#2e3440',
+      selectHalo: 'rgba(136,192,208,0.18)', neg: '#5e81ac', pos: '#d08770', fog: 0.35, axis: ['#bf616a', '#a3be8c', '#81a1c1', '#ebcb8b', '#b48ead', '#d08770', '#8fbcbb', '#88c0d0', '#bf616a', '#a3be8c'],
+      gizmoBg: 'rgba(46,52,64,0.6)', font: SANS,
+    },
+    palette: ['#88c0d0', '#a3be8c', '#ebcb8b', '#b48ead', '#d08770', '#8fbcbb', '#bf616a', '#e5e9f0'],
+  },
+  {
+    // Sakura: blossom white, plum ink, leaf-green accent
+    id: 'sakura',
+    dark: false,
+    css: {
+      '--bg': '#fbf4f5', '--bg2': '#fffafa', '--panel': 'rgba(255,250,250,0.94)', '--line': '#efd9de',
+      '--text': '#3d2b33', '--muted': '#8f727c', '--accent': '#c2185b', '--accent2': '#6a8f3b', '--danger': '#c62828',
+      '--on-bg': '#fbe3ea', '--hover': '#e4a9bb', '--font': SANS, '--font-head': MINCHO, '--radius': '16px',
+      '--canvas-bg': 'radial-gradient(ellipse at 50% 35%, #fffafb 0%, #f8e7ec 80%)', '--badge-glow': 'rgba(194,24,91,0.15)',
+      '--letter': '0.02em', '--head-transform': 'none', '--toast-bg': 'rgba(61,43,51,0.92)',
+    },
+    canvas: {
+      bgInner: '#fffafb', bgOuter: '#f8e7ec', grid: 'rgba(194,24,91,0.06)', gridMajor: 0, gridMajorColor: '',
+      line: 1.35, glow: 0, composite: 'source-over', tint: '#5a2a3c', mix: 0.35, vertexStroke: '#fffafa',
+      selectHalo: 'rgba(194,24,91,0.12)', neg: '#7b6fb0', pos: '#e0457b', fog: 0.35, axis: ['#d6336c', '#6a8f3b', '#7b6fb0', '#e08a2c', '#a64d79', '#3d2b33', '#d6336c', '#6a8f3b', '#7b6fb0', '#e08a2c'],
+      gizmoBg: 'rgba(255,250,250,0.85)', font: SANS,
+    },
+    palette: ['#e0457b', '#a64d79', '#6a8f3b', '#7b6fb0', '#e08a2c', '#c2185b', '#5a2a3c', '#d48aa5'],
+  },
+  {
+    // Swiss / International Typographic Style: white, black, one red
+    id: 'swiss',
+    dark: false,
+    css: {
+      '--bg': '#ffffff', '--bg2': '#ffffff', '--panel': 'rgba(255,255,255,0.97)', '--line': '#111111',
+      '--text': '#111111', '--muted': '#6b6b6b', '--accent': '#e30613', '--accent2': '#111111', '--danger': '#e30613',
+      '--on-bg': '#111111', '--hover': '#e30613', '--font': "'Helvetica Neue', Helvetica, Arial, 'Hiragino Sans', 'Noto Sans JP', sans-serif", '--font-head': "'Helvetica Neue', Helvetica, Arial, 'Hiragino Sans', sans-serif", '--radius': '0px',
+      '--canvas-bg': '#ffffff', '--badge-glow': 'rgba(0,0,0,0)',
+      '--letter': '-0.01em', '--head-transform': 'none', '--toast-bg': 'rgba(17,17,17,0.95)',
+    },
+    canvas: {
+      bgInner: '#ffffff', bgOuter: '#ffffff', grid: 'rgba(0,0,0,0.07)', gridMajor: 2, gridMajorColor: 'rgba(0,0,0,0.13)',
+      line: 1.6, glow: 0, composite: 'source-over', tint: '#111111', mix: 0.85, vertexStroke: '#ffffff',
+      selectHalo: 'rgba(227,6,19,0.18)', neg: '#111111', pos: '#e30613', fog: 0.55, axis: ['#e30613', '#111111', '#6b6b6b', '#e30613', '#111111', '#6b6b6b', '#e30613', '#111111', '#6b6b6b', '#e30613'],
+      gizmoBg: 'rgba(255,255,255,0.9)', font: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+    },
+    palette: ['#111111', '#e30613', '#6b6b6b', '#111111', '#e30613', '#9a9a9a', '#111111', '#e30613'],
+  },
+  {
+    // Terminal: green phosphor CRT
+    id: 'terminal',
+    dark: true,
+    css: {
+      '--bg': '#050a05', '--bg2': '#0a120a', '--panel': 'rgba(8,16,8,0.92)', '--line': '#1d3a1d',
+      '--text': '#b8f5b0', '--muted': '#5f9a58', '--accent': '#39ff14', '--accent2': '#ffb000', '--danger': '#ff5f56',
+      '--on-bg': 'rgba(57,255,20,0.12)', '--hover': '#39ff14', '--font': MONO, '--font-head': MONO, '--radius': '0px',
+      '--canvas-bg': 'radial-gradient(ellipse at 50% 50%, #0c1a0c 0%, #050a05 80%)', '--badge-glow': 'rgba(57,255,20,0.6)',
+      '--letter': '0.02em', '--head-transform': 'uppercase', '--toast-bg': 'rgba(5,10,5,0.95)',
+    },
+    canvas: {
+      bgInner: '#0c1a0c', bgOuter: '#050a05', grid: 'rgba(57,255,20,0.07)', gridMajor: 0, gridMajorColor: '',
+      line: 1.15, glow: 5, composite: 'lighter', tint: '#39ff14', mix: 0.82, vertexStroke: '#050a05',
+      selectHalo: 'rgba(255,176,0,0.14)', neg: '#1fbf3f', pos: '#ffb000', fog: 0.3, axis: ['#39ff14', '#ffb000', '#8cff7a', '#39ff14', '#ffb000', '#8cff7a', '#39ff14', '#ffb000', '#8cff7a', '#39ff14'],
+      gizmoBg: 'rgba(0,0,0,0.5)', font: MONO,
+    },
+    palette: ['#39ff14', '#ffb000', '#8cff7a', '#00e5a0', '#c6ff00', '#ffd866', '#39ff14', '#ffb000'],
+  },
+  {
+    // Sunset: indigo dusk sky, coral and gold
+    id: 'sunset',
+    dark: true,
+    css: {
+      '--bg': '#1b1430', '--bg2': '#241a3d', '--panel': 'rgba(36,26,61,0.88)', '--line': '#43335f',
+      '--text': '#fdeee4', '--muted': '#bfa5b8', '--accent': '#ff8a5b', '--accent2': '#ffc86b', '--danger': '#ff5d73',
+      '--on-bg': 'rgba(255,138,91,0.18)', '--hover': '#ff8a5b', '--font': SANS, '--font-head': SANS, '--radius': '12px',
+      '--canvas-bg': 'linear-gradient(180deg, #1b1430 0%, #3a1f4d 45%, #a24a5f 85%, #f08a5d 100%)', '--badge-glow': 'rgba(255,138,91,0.5)',
+      '--letter': '0.01em', '--head-transform': 'none', '--toast-bg': 'rgba(27,20,48,0.94)',
+    },
+    canvas: {
+      bgInner: '#3a1f4d', bgOuter: '#1b1430', grid: 'rgba(255,200,107,0.08)', gridMajor: 0, gridMajorColor: '',
+      line: 1.4, glow: 2, composite: 'source-over', tint: '#fff1e0', mix: 0.2, vertexStroke: '#1b1430',
+      selectHalo: 'rgba(255,200,107,0.16)', neg: '#7a6cff', pos: '#ffc86b', fog: 0.35, axis: ['#ff8a5b', '#ffc86b', '#c58bff', '#ff5d73', '#7ad7f0', '#fdeee4', '#ff8a5b', '#ffc86b', '#c58bff', '#ff5d73'],
+      gizmoBg: 'rgba(27,20,48,0.55)', font: SANS,
+    },
+    palette: ['#ff8a5b', '#ffc86b', '#c58bff', '#ff5d73', '#7ad7f0', '#fdeee4', '#f2a6c8', '#ffd9a8'],
+  },
 ];
 
 export const themeById = (id: string): Theme => THEMES.find((t) => t.id === id) ?? THEMES[0];
