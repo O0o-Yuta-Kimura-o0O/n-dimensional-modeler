@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1117" />
+    <title>n-Dimensional Modeler</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="logo" aria-hidden="true">◇</span>
+          <span data-i18n="appTitle">n次元モデラー</span>
+          <span class="ver" id="ver"></span>
+        </div>
+        <div class="top-actions">
+          <button id="btnUndo" class="icon" data-i18n-title="undo">↶</button>
+          <button id="btnRedo" class="icon" data-i18n-title="redo">↷</button>
+          <div class="menu-wrap">
+            <button id="btnFile" class="icon" data-i18n-title="file">☰</button>
+            <div id="fileMenu" class="menu" hidden>
+              <button id="btnExport" data-i18n="exportScene"></button>
+              <button id="btnImport" data-i18n="importScene"></button>
+              <button id="btnNew" data-i18n="newScene"></button>
+            </div>
+          </div>
+          <select id="langSel" data-i18n-title="language"></select>
+          <button id="btnHelp" class="icon" data-i18n-title="help">?</button>
+        </div>
+      </header>
+
+      <main id="stage">
+        <canvas id="view"></canvas>
+        <div id="hud">
+          <div class="dim-badge"><span id="dimBig">3</span><small>D</small></div>
+          <div id="hudInfo"></div>
+        </div>
+        <div id="hint" data-i18n="hint"></div>
+
+        <aside id="panelAdd" class="panel left">
+          <div class="panel-head"><span data-i18n="add"></span><button class="icon close" data-close="panelAdd" data-i18n-title="close">×</button></div>
+          <p class="note" id="createNote"></p>
+          <div class="params">
+            <label><span data-i18n="sidesP"></span><input id="inP" type="number" min="3" max="64" value="6" /></label>
+            <label><span data-i18n="sidesQ"></span><input id="inQ" type="number" min="3" max="64" value="4" /></label>
+          </div>
+          <div id="primList" class="prim-list"></div>
+
+          <details class="view-settings" open>
+            <summary data-i18n="display"></summary>
+            <div class="seg" id="segMode">
+              <button data-mode="project" data-i18n="mode_project"></button>
+              <button data-mode="slice" data-i18n="mode_slice"></button>
+            </div>
+            <label class="row" id="sliceRow"><span id="sliceLabel"></span><input id="sliceOff" type="range" min="-1.5" max="1.5" step="0.01" value="0" /></label>
+            <div class="seg" id="segProj">
+              <button data-proj="persp" data-i18n="perspective"></button>
+              <button data-proj="ortho" data-i18n="orthographic"></button>
+            </div>
+            <label class="row"><span data-i18n="dragRotates"></span><select id="rotSel"></select></label>
+            <div class="checks">
+              <label><input type="checkbox" id="chkVerts" /> <span data-i18n="showVertices"></span></label>
+              <label><input type="checkbox" id="chkDepth" checked /> <span data-i18n="colorDepth"></span></label>
+              <label><input type="checkbox" id="chkAxes" checked /> <span data-i18n="showAxes"></span></label>
+              <label><input type="checkbox" id="chkAuto" /> <span data-i18n="autoRotate"></span></label>
+            </div>
+            <button id="btnResetView" data-i18n="resetView"></button>
+          </details>
+        </aside>
+
+        <aside id="panelShapes" class="panel right">
+          <div class="panel-head"><span data-i18n="shapes"></span><button class="icon close" data-close="panelShapes" data-i18n-title="close">×</button></div>
+          <ul id="shapeList" class="shape-list"></ul>
+          <div id="selBox">
+            <h4 data-i18n="transform"></h4>
+            <div class="row wrap">
+              <span data-i18n="plane"></span>
+              <select id="rotA"></select><select id="rotB"></select>
+              <button id="rotMinus">⟲ 15°</button><button id="rotPlus">⟳ 15°</button>
+            </div>
+            <div class="row wrap">
+              <button id="scDown" data-i18n="scaleDown"></button>
+              <button id="scUp" data-i18n="scaleUp"></button>
+              <input type="color" id="colorIn" data-i18n-title="color" />
+            </div>
+            <div class="row wrap">
+              <span data-i18n="stretch"></span><select id="stretchAxis"></select>
+              <button id="stDown">÷1.1</button><button id="stUp">×1.1</button>
+            </div>
+            <div class="row wrap">
+              <button id="btnDup" data-i18n="duplicate"></button>
+              <button id="btnDel" class="danger" data-i18n="delete"></button>
+              <button id="btnDeselect" data-i18n="deselect"></button>
+            </div>
+            <h4 data-i18n="booleans"></h4>
+            <div class="row wrap bool">
+              <button id="bUnion" data-i18n="bool_union"></button>
+              <button id="bInter" data-i18n="bool_intersect"></button>
+              <button id="bSub" data-i18n="bool_subtract"></button>
+              <button id="bMerge" data-i18n="merge"></button>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <footer class="bottombar">
+        <div class="dimrow">
+          <label for="dimSlider" data-i18n="dimension"></label>
+          <input id="dimSlider" type="range" min="0" max="10" step="1" value="3" />
+          <output id="dimOut">3</output>
+          <label class="max"><span data-i18n="maxDim"></span><input id="maxDim" type="number" min="1" max="20" value="10" /></label>
+        </div>
+        <div class="toolrow">
+          <button id="tAdd" class="toggle" data-panel="panelAdd">＋ <span data-i18n="add"></span></button>
+          <div class="seg tools" id="segTool">
+            <button data-tool="view" data-i18n-title="tool_view">⟳<small data-i18n="tool_view"></small></button>
+            <button data-tool="move" data-i18n-title="tool_move">✥<small data-i18n="tool_move"></small></button>
+            <button data-tool="vertex" data-i18n-title="tool_vertex">•<small data-i18n="tool_vertex"></small></button>
+          </div>
+          <button id="tMulti" class="toggle" data-i18n-title="multiSelect">⧉ <span data-i18n="multiSelect"></span></button>
+          <label class="axis-lock"><span data-i18n="moveAlong"></span><select id="axisSel"></select></label>
+          <button id="tShapes" class="toggle" data-panel="panelShapes">☷ <span data-i18n="shapes"></span></button>
+        </div>
+      </footer>
+
+      <div id="toast" role="status" aria-live="polite"></div>
+      <input type="file" id="fileIn" accept="application/json,.json" hidden />
+
+      <dialog id="helpDlg">
+        <h3 data-i18n="helpTitle"></h3>
+        <ol>
+          <li data-i18n="help1"></li>
+          <li data-i18n="help2"></li>
+          <li data-i18n="help3"></li>
+          <li data-i18n="help4"></li>
+          <li data-i18n="help5"></li>
+          <li data-i18n="help6"></li>
+        </ol>
+        <form method="dialog"><button data-i18n="close"></button></form>
+      </dialog>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
